@@ -1,0 +1,17 @@
+{
+  "name": "liter-html",
+  "version": "0.1",
+  "module": "index.js",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "rollup -c rollup.config.js",
+    "dev": "wds -p 5000 --watch",
+    "test": "echo 'no tests'"
+  },
+  "devDependencies": {
+    "@rollup/plugin-terser": "^0.4.3",
+    "@web/dev-server": "^0.2.1",
+    "rollup": "^3.23.1"
+  }
+}
