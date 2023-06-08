@@ -1,6 +1,5 @@
 const marker = `marker$${Math.random().toString(36).slice(5)}$`;
 
-/** @type { Map<String[], HTMLTemplateElement> } */
 const templates = new Map();
 
 const isTemplateResult = Symbol("TemplateResult");
@@ -8,36 +7,18 @@ const renderPart = Symbol("part");
 export const noChange = Symbol("noChange");
 export const nothing = Symbol("nothing");
 
-const isPrimitive = (value) =>
-  value === null || (typeof value != "object" && typeof value != "function");
+const isNonNullPrimitive = (value) =>
+  typeof value !== "object" && typeof value !== "function";
 
-/**
- * Recursively search through node and its descendants for part markers
- * @typedef { {path: Number[]} } PartDescription
- *
- * @param { Node } node
- * @param { Number[] } path
- */
 const findParts = (node, path) => {
-  /** @type PartDescription[] */
-  const partDescriptions = [];
-  if (node.nodeType === Node.COMMENT_NODE) {
-    if (node.nodeValue === marker) {
-      partDescriptions.push({ path });
-    }
+  if (node.nodeType === Node.COMMENT_NODE && node.nodeValue === marker) {
+    return { path };
   }
-  const children = node.childNodes;
-  const length = children.length;
-  for (let i = 0; i < length; i++) {
-    partDescriptions.push(...findParts(children[i], path.concat([i])));
-  }
-  return partDescriptions;
+  return Array.from(node.childNodes)
+    .map((childNode, index) => findParts(childNode, [...path, index]))
+    .flat();
 };
 
-/**
- * @param { String[] } strings
- * @returns { HTMLTemplateElement }
- */
 const getTemplate = (strings) => {
   let template = templates.get(strings);
   if (template) {
@@ -51,7 +32,7 @@ const getTemplate = (strings) => {
 };
 
 export const html = (strings, ...values) => ({
-  template: getTemplate(strings),
+  strings,
   values,
   [isTemplateResult]: true,
 });
@@ -59,71 +40,65 @@ export const html = (strings, ...values) => ({
 export const render = (value, container) => {
   if (!container[renderPart]) {
     container[renderPart] = new Part(document.createComment(marker));
-    container.appendChild(container[renderPart].node);
+    container.appendChild(container[renderPart].anchor);
   }
   container[renderPart].render(value);
 };
 
 class Part {
   constructor(node) {
-    this.node = node;
-    this.after = node?.nextSibling ?? null;
+    this.anchor = node;
+    this.after = node.nextSibling;
     this.value = null;
-    this.renderTemplate = null;
+    this.renderedTemplate = null;
   }
 
   render(value) {
+    if (value === this.value || value === noChange) {
+      return;
+    }
+
     if (value?.[isTemplateResult]) {
       this._renderTemplateResult(value);
       this.value = isTemplateResult;
-    } else {
-      if (value === this.value || value === noChange) {
-        return;
-      } else if (isPrimitive(value)) {
-        if (value === nothing || value == null || value === "") {
-          this._clear();
-        } else {
-          this._renderText(value);
-        }
-      } else if (value.nodeType) {
-        this._renderNode(value);
-      } else if (value[Symbol.iterator]) {
-        this._renderIterable(value);
-        // TODO: Fix rendering the same array object twice with different values
-      } else {
-        this._renderText(value); // Fallback
-      }
-      this.value = value;
-      this.renderTemplate = null;
+      return;
     }
+
+    if (value === nothing || value == null || value === "") {
+      this._clear();
+    } else if (isNonNullPrimitive(value)) {
+      this._renderText(value);
+    } else if (value.nodeType) {
+      this._renderNode(value);
+    } else {
+      this._renderText(value); // Fallback
+    }
+    this.value = value;
+    this.renderedTemplate = null;
   }
 
   _renderText(text) {
     this._renderNode(document.createTextNode(text));
   }
 
-  // Render the given node into this part
   _renderNode(node) {
     this._clear();
-    this.node.parentNode.insertBefore(node, this.after);
+    this.anchor.parentNode.insertBefore(node, this.after);
   }
 
-  _renderTemplateResult({ template, values }) {
-    if (!(this.renderTemplate?.template === template)) {
+  _renderTemplateResult({ strings, values }) {
+    const template = getTemplate(strings);
+    if (this.renderedTemplate?.template !== template) {
       this._clear();
-      this.renderTemplate = new RenderTemplate(template);
-      this._renderNode(this.renderTemplate.fragment);
+      this.renderedTemplate = new TemplateInstance(template);
+      this._renderNode(this.renderedTemplate.fragment);
     }
-    this.renderTemplate.renderParts(values);
-  }
-
-  _renderIterable(iterable) {
-    // TODO
+    this.renderedTemplate.render(values);
   }
 
   _clear() {
-    const parent = this.node.parentNode;
-    let nodeToRemove = this.node.nextSibling;
+    const parent = this.anchor.parentNode;
+    let nodeToRemove = this.anchor.nextSibling;
     while (nodeToRemove !== this.after) {
       const nextNode = nodeToRemove.nextSibling;
       parent.removeChild(nodeToRemove);
@@ -133,7 +108,7 @@ class Part {
   }
 }
 
-class RenderTemplate {
+class TemplateInstance {
   constructor(template) {
     this.template = template;
     this.fragment = template.content.cloneNode(true);
@@ -145,7 +120,7 @@ class RenderTemplate {
       return new Part(node);
     });
   }
-  renderParts(values) {
+  render(values) {
     this.parts.forEach((part, index) => {
       part.render(values[index]);
     });

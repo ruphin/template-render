@@ -3,12 +3,10 @@
 <script type="module">
   // import * as exports from "./lit-html.js";
   import * as exports from "./index.js";
-
   Object.assign(window, exports);
 
-  window.thing = (val) =>
-    html`<div>Hello ${html`<span>${html`World`}</span>${val}`}</div>`;
+  window.message = (val) =>
+    html`<div>Hello ${html`<span>${val}</span>`}!!</div>`;
 
-  render(thing("!!"), document.body);
-  render(thing(), document.body);
+  render(message("World"), document.body);
 </script>
